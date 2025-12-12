@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from loguru import logger
 
-from .event import SignalEvent, OrderEvent
+from .event import SignalEvent, OrderEvent, FillEvent, EventType, event_engine
 
 
 @dataclass
@@ -98,7 +98,14 @@ class Portfolio:
         self.min_commission = 5.0  # 最低佣金 5元
         self.transfer_fee_rate = 0.00002  # 过户费 0.002%
         
+        # 注册事件处理器
+        self._register_event_handlers()
+        
         logger.info(f"初始化投资组合，初始资金: {initial_capital:.2f}")
+    
+    def _register_event_handlers(self):
+        """注册事件处理器"""
+        event_engine.register_handler(EventType.FILL, self.handle_fill)
     
     def calculate_commission(self, value: float, is_buy: bool = True) -> float:
         """
@@ -399,6 +406,110 @@ class Portfolio:
         }
         
         return metrics
+    
+    def handle_fill(self, fill_event: FillEvent):
+        """
+        处理成交事件
+        
+        Args:
+            fill_event: 成交事件
+        """
+        data = fill_event.data
+        symbol = data['symbol']
+        direction = data['direction']
+        quantity = data['quantity']
+        price = data['price']
+        commission = data['commission']
+        timestamp = fill_event.timestamp
+        
+        logger.info(f"处理成交事件: {fill_event}")
+        
+        if direction == 'BUY':
+            # 买入成交
+            self._handle_buy_fill(symbol, quantity, price, commission, timestamp)
+        elif direction == 'SELL':
+            # 卖出成交
+            self._handle_sell_fill(symbol, quantity, price, commission, timestamp)
+        
+        # 更新总资产
+        self.update_total_value(price)
+    
+    def _handle_buy_fill(self, symbol: str, quantity: float, price: float, 
+                        commission: float, timestamp: datetime):
+        """处理买入成交"""
+        # 计算交易金额
+        trade_value = price * quantity
+        total_cost = trade_value + commission
+        
+        # 更新持仓
+        if symbol not in self.positions:
+            self.positions[symbol] = Position(
+                symbol=symbol,
+                quantity=quantity,
+                avg_price=price,
+                current_price=price,
+                market_value=trade_value,
+                unrealized_pnl=0
+            )
+        else:
+            self.positions[symbol].add_quantity(quantity, price)
+        
+        # 更新资金
+        self.cash -= total_cost
+        
+        # 记录交易
+        trade_record = {
+            'timestamp': timestamp,
+            'symbol': symbol,
+            'action': 'BUY',
+            'quantity': quantity,
+            'price': price,
+            'trade_value': trade_value,
+            'fees': commission,
+            'cash_after': self.cash
+        }
+        self.trades.append(trade_record)
+        
+        logger.info(f"买入成交: {symbol} {quantity}股 @{price:.2f}, "
+                   f"费用:{commission:.2f}, 剩余现金:{self.cash:.2f}")
+    
+    def _handle_sell_fill(self, symbol: str, quantity: float, price: float, 
+                         commission: float, timestamp: datetime):
+        """处理卖出成交"""
+        # 检查是否有持仓
+        if symbol not in self.positions:
+            logger.warning(f"卖出成交但没有 {symbol} 的持仓")
+            return
+        
+        # 计算交易金额
+        trade_value = price * quantity
+        total_revenue = trade_value - commission
+        
+        # 更新持仓
+        self.positions[symbol].reduce_quantity(quantity, price)
+        
+        # 如果持仓为0，移除该持仓
+        if self.positions[symbol].quantity == 0:
+            del self.positions[symbol]
+        
+        # 更新资金
+        self.cash += total_revenue
+        
+        # 记录交易
+        trade_record = {
+            'timestamp': timestamp,
+            'symbol': symbol,
+            'action': 'SELL',
+            'quantity': quantity,
+            'price': price,
+            'trade_value': trade_value,
+            'fees': commission,
+            'cash_after': self.cash
+        }
+        self.trades.append(trade_record)
+        
+        logger.info(f"卖出成交: {symbol} {quantity}股 @{price:.2f}, "
+                   f"费用:{commission:.2f}, 剩余现金:{self.cash:.2f}")
     
     def __repr__(self):
         summary = self.get_portfolio_summary()
