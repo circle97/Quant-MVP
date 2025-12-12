@@ -97,11 +97,16 @@ class OrderEvent(Event):
     
     def __init__(self, symbol: str, order_type: str, quantity: float,
                  direction: str, price: Optional[float] = None,
-                 timestamp: datetime = None):
+                 order_id: Optional[str] = None, timestamp: datetime = None):
         if timestamp is None:
             timestamp = datetime.now()
+        
+        # 生成订单ID（如果未提供）
+        if order_id is None:
+            order_id = f"ORDER_{timestamp.strftime('%Y%m%d%H%M%S%f')}"
             
         data = {
+            'order_id': order_id,
             'symbol': symbol,
             'order_type': order_type,    # 'MARKET', 'LIMIT'
             'quantity': quantity,
@@ -110,6 +115,14 @@ class OrderEvent(Event):
         }
         
         super().__init__(EventType.ORDER, timestamp, data)
+    
+    @property
+    def order_id(self) -> str:
+        return self.data['order_id']
+    
+    @property
+    def symbol(self) -> str:
+        return self.data['symbol']
     
     def __repr__(self):
         price_str = f"@{self.data['price']}" if self.data['price'] else "MARKET"
@@ -132,6 +145,54 @@ class TimerEvent(Event):
     @property
     def interval(self) -> int:
         return self.data['interval']
+
+
+class FillEvent(Event):
+    """成交事件"""
+    
+    def __init__(self, order_id: str, symbol: str, quantity: float, 
+                 price: float, direction: str, commission: float, 
+                 timestamp: datetime = None):
+        if timestamp is None:
+            timestamp = datetime.now()
+            
+        data = {
+            'order_id': order_id,
+            'symbol': symbol,
+            'quantity': quantity,
+            'price': price,
+            'direction': direction,
+            'commission': commission
+        }
+        
+        super().__init__(EventType.FILL, timestamp, data)
+    
+    @property
+    def order_id(self) -> str:
+        return self.data['order_id']
+    
+    @property
+    def symbol(self) -> str:
+        return self.data['symbol']
+    
+    @property
+    def quantity(self) -> float:
+        return self.data['quantity']
+    
+    @property
+    def price(self) -> float:
+        return self.data['price']
+    
+    @property
+    def direction(self) -> str:
+        return self.data['direction']
+    
+    @property
+    def commission(self) -> float:
+        return self.data['commission']
+    
+    def __repr__(self):
+        return f"FillEvent({self.symbol} {self.data['direction']} {self.data['quantity']} @ {self.data['price']}, 佣金: {self.data['commission']:.2f})"
 
 
 class EventEngine:

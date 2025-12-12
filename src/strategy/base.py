@@ -3,12 +3,12 @@
 策略基类 - 所有交易策略的模板
 """
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import pandas as pd
 from loguru import logger
 
-from src.core.event import Event, BarEvent, SignalEvent, TimerEvent, event_engine
+from src.core.event import Event, BarEvent, SignalEvent, TimerEvent, OrderEvent, EventType, event_engine
 from src.core.portfolio import Portfolio
 from src.data import astock_data_manager, stock_utils
 
@@ -16,7 +16,7 @@ from src.data import astock_data_manager, stock_utils
 class Strategy(ABC):
     """策略抽象基类"""
     
-    def __init__(self, name: str, symbols: List[str], initial_capital: float = 10000.0):
+    def __init__(self, name: str, symbols: List[str], initial_capital: float = 10000.0, event_engine=None):
         """
         初始化策略
         
@@ -24,6 +24,7 @@ class Strategy(ABC):
             name: 策略名称
             symbols: 交易的股票代码列表
             initial_capital: 初始资金
+            event_engine: 事件引擎实例，默认为全局实例
         """
         self.name = name
         self.symbols = [stock_utils.normalize_symbol(s)[0] for s in symbols]
@@ -36,12 +37,26 @@ class Strategy(ABC):
         # 状态管理
         self.initialized = False
         self.running = False
+        self.paused = False
         
         # 投资组合
         self.portfolio = Portfolio(initial_capital)
         
         # 策略参数
         self.params = {}
+        
+        # 策略状态统计
+        self.stats = {
+            'signals': 0,
+            'orders': 0,
+            'fills': 0,
+            'pnl': 0.0,
+            'drawdown': 0.0
+        }
+        
+        # 使用传入的事件引擎或全局事件引擎
+        from src.core.event import event_engine as global_event_engine
+        self.event_engine = event_engine or global_event_engine
         
         # 注册事件处理器
         self._register_event_handlers()
@@ -50,8 +65,9 @@ class Strategy(ABC):
     
     def _register_event_handlers(self):
         """注册事件处理器"""
-        event_engine.register_handler(BarEvent, self.on_bar)
-        event_engine.register_handler(TimerEvent, self.on_timer)
+        self.event_engine.register_handler(EventType.BAR_DATA, self.on_bar)
+        self.event_engine.register_handler(EventType.ORDER, self.on_order)
+        self.event_engine.register_handler(EventType.TIMER, self.on_timer)
     
     def initialize(self):
         """策略初始化"""
@@ -103,16 +119,59 @@ class Strategy(ABC):
             self.initialize()
         
         self.running = True
+        self.paused = False
+        self.on_start()
         logger.info(f"策略 {self.name} 已启动")
     
     def stop(self):
         """停止策略"""
         self.running = False
+        self.on_stop()
         logger.info(f"策略 {self.name} 已停止")
+    
+    def pause(self):
+        """暂停策略"""
+        if self.running and not self.paused:
+            self.paused = True
+            self.on_pause()
+            logger.info(f"策略 {self.name} 已暂停")
+    
+    def resume(self):
+        """恢复策略"""
+        if self.running and self.paused:
+            self.paused = False
+            self.on_resume()
+            logger.info(f"策略 {self.name} 已恢复")
+    
+    def update_params(self, params: Dict[str, Any]):
+        """更新策略参数"""
+        self.params.update(params)
+        self.on_params_update(params)
+        logger.info(f"策略 {self.name} 参数已更新: {params}")
     
     @abstractmethod
     def on_init(self):
         """策略初始化回调（子类实现）"""
+        pass
+    
+    def on_start(self):
+        """策略启动回调（可选实现）"""
+        pass
+    
+    def on_stop(self):
+        """策略停止回调（可选实现）"""
+        pass
+    
+    def on_pause(self):
+        """策略暂停回调（可选实现）"""
+        pass
+    
+    def on_resume(self):
+        """策略恢复回调（可选实现）"""
+        pass
+    
+    def on_params_update(self, params: Dict[str, Any]):
+        """参数更新回调（可选实现）"""
         pass
     
     @abstractmethod
@@ -129,6 +188,20 @@ class Strategy(ABC):
         """定时器回调（可选实现）"""
         pass
     
+    def on_tick(self, event):
+        """Tick数据回调（可选实现）"""
+        pass
+    
+    def on_order(self, event: OrderEvent):
+        """订单事件回调（可选实现）"""
+        self.stats['orders'] += 1
+        pass
+    
+    def on_fill(self, event):
+        """成交事件回调（可选实现）"""
+        self.stats['fills'] += 1
+        pass
+    
     def generate_signal(self, symbol: str, signal_type: str, 
                        strength: float = 1.0, price: Optional[float] = None):
         """
@@ -140,7 +213,7 @@ class Strategy(ABC):
             strength: 信号强度 (0.0-1.0)
             price: 建议价格
         """
-        if not self.running:
+        if not self.running or self.paused:
             return
         
         # 创建信号事件
@@ -153,7 +226,10 @@ class Strategy(ABC):
         )
         
         # 放入事件引擎
-        event_engine.put(signal_event)
+        self.event_engine.put(signal_event)
+        
+        # 更新信号统计
+        self.stats['signals'] += 1
         
         logger.debug(f"策略 {self.name} 生成信号: {signal_event}")
     
@@ -170,12 +246,12 @@ class Strategy(ABC):
         return {
             'name': self.name,
             'symbols': self.symbols,
-            'initialized': self.initialized,
             'running': self.running,
-            'initial_capital': self.initial_capital,
-            'current_capital': self.portfolio.current_capital,
-            'total_return': self.portfolio.get_portfolio_summary()['总收益率'],
-            'positions': len(self.portfolio.positions)
+            'paused': self.paused,
+            'initialized': self.initialized,
+            'params': self.params,
+            'portfolio': self.portfolio.get_portfolio_summary(),
+            'stats': self.stats
         }
     
     def get_position(self, symbol: str):
