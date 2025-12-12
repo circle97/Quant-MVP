@@ -34,14 +34,29 @@ class ConfigManager:
             return self._get_default_config()
         
         try:
-            with open(self.config_path, 'r', encoding='utf-8-sig') as f:
-                config = yaml.safe_load(f)
+            # 尝试不同的编码方式
+            encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
+            config = None
+            
+            for encoding in encodings:
+                try:
+                    with open(self.config_path, 'r', encoding=encoding) as f:
+                        config = yaml.safe_load(f)
+                    logger.info(f"配置文件加载成功，使用编码: {encoding}")
+                    break
+                except UnicodeDecodeError:
+                    continue
+                except Exception as e:
+                    logger.error(f"使用编码 {encoding} 加载失败: {e}")
+                    continue
+            
+            if config is None:
+                raise ValueError("无法使用任何编码加载配置文件")
                 
             # 合并默认配置
             default_config = self._get_default_config()
             config = self._merge_config(default_config, config)
             
-            logger.info(f"配置文件加载成功: {self.config_path}")
             return config
             
         except Exception as e:
@@ -57,16 +72,24 @@ class ConfigManager:
                 'timezone': 'Asia/Shanghai'
             },
             'data': {
-                'source': 'yfinance',
+                'source': 'akshare',
                 'cache_dir': './data/cache',
                 'update_interval': 300,
-                'alpha_vantage': {'api_key': ''},
-                'tushare': {'token': ''}
+                'tushare': {
+                    'token': '',
+                    'pro_api': False
+                },
+                'akshare': {
+                    'timeout': 10
+                },
+                'symbols': ['000001.SZ', '000002.SZ', '600519.SH'],
+                'start_date': '2020-01-01',
+                'end_date': '2023-12-31'
             },
             'strategies': {
                 'ma_cross': {
                     'enabled': True,
-                    'symbols': ['AAPL', 'MSFT'],
+                    'symbols': ['000001.SZ', '600519.SH'],
                     'params': {
                         'fast_period': 10,
                         'slow_period': 30,
@@ -76,9 +99,10 @@ class ConfigManager:
             },
             'trading': {
                 'initial_capital': 10000.0,
-                'commission': 0.001,
-                'slippage': 0.001,
-                'min_commission': 0.0
+                'commission': 0.00025,
+                'stamp_duty': 0.001,
+                'transfer_fee': 0.00002,
+                'min_commission': 5.0
             },
             'risk': {
                 'max_position_size': 0.2,
@@ -91,6 +115,9 @@ class ConfigManager:
     
     def _merge_config(self, default: Dict, custom: Dict) -> Dict:
         """递归合并配置字典"""
+        if custom is None:
+            return default
+        
         for key, value in custom.items():
             if key in default and isinstance(default[key], dict) and isinstance(value, dict):
                 default[key] = self._merge_config(default[key], value)
@@ -127,7 +154,7 @@ class ConfigManager:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         
         try:
-            with open(self.config_path, 'w', encoding='utf-8-sig') as f:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True)
             logger.info(f"配置保存成功: {self.config_path}")
         except Exception as e:

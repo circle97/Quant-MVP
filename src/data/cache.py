@@ -70,10 +70,10 @@ class DataCache:
             ''')
             
             self.conn.commit()
-            logger.info(f"数据缓存数据库初始化完成: {self.db_path}")
+            logger.info(f'数据缓存数据库初始化完成: {self.db_path}')
             
         except Exception as e:
-            logger.error(f"初始化数据库失败: {e}")
+            logger.error(f'初始化数据库失败: {e}')
             raise
     
     def _generate_cache_key(self, data_type: str, **kwargs) -> str:
@@ -90,7 +90,7 @@ class DataCache:
         params_str = json.dumps(kwargs, sort_keys=True)
         
         # 生成MD5哈希
-        key_str = f"{data_type}:{params_str}"
+        key_str = f'{data_type}:{params_str}'
         cache_key = hashlib.md5(key_str.encode()).hexdigest()
         
         return cache_key
@@ -110,7 +110,7 @@ class DataCache:
         if memory_key in self.memory_cache:
             data, timestamp = self.memory_cache[memory_key]
             if datetime.now().timestamp() - timestamp < self.memory_cache_ttl:
-                logger.debug(f"从内存缓存获取数据: {memory_key}")
+                logger.debug(f'从内存缓存获取数据: {memory_key}')
                 return data
         
         # 2. 检查数据库缓存
@@ -141,11 +141,11 @@ class DataCache:
                 # 存入内存缓存
                 self.memory_cache[memory_key] = (data, datetime.now().timestamp())
                 
-                logger.debug(f"从数据库缓存获取数据: {cache_key}")
+                logger.debug(f'从数据库缓存获取数据: {cache_key}')
                 return data
                 
         except Exception as e:
-            logger.error(f"从缓存获取数据失败: {e}")
+            logger.error(f'从缓存获取数据失败: {e}')
         
         return None
     
@@ -189,37 +189,35 @@ class DataCache:
             ))
             
             self.conn.commit()
-            logger.debug(f"数据已缓存: {cache_key}, TTL: {ttl}秒")
+            logger.debug(f'数据已缓存: {cache_key}, TTL: {ttl}秒')
             
         except Exception as e:
-            logger.error(f"设置缓存失败: {e}")
+            logger.error(f'设置缓存失败: {e}')
     
-    def delete(self, cache_key: str = None, data_type: str = None, **kwargs):
+    def delete(self, cache_key: str = None, **kwargs):
         """删除缓存数据
         
         Args:
             cache_key: 直接指定缓存键
-            data_type: 数据类型（生成缓存键时需要）
             **kwargs: 或通过参数生成缓存键
         """
-
-        if cache_key is None:
-            if data_type is None:
-                raise ValueError("生成缓存键时必须提供data_type参数")
-            cache_key = self._generate_cache_key(data_type, **kwargs)
-        
-        # 从内存缓存删除
-        if cache_key in self.memory_cache:
-            del self.memory_cache[cache_key]
-        
-        # 从数据库删除
-        cursor = self.conn.cursor()
-        cursor.execute('DELETE FROM data_cache WHERE cache_key = ?', (cache_key,))
-        self.conn.commit()
-        
-        logger.debug(f"缓存已删除: {cache_key}")
+        try:
+            if cache_key is None:
+                cache_key = self._generate_cache_key(**kwargs)
             
-
+            # 从内存缓存删除
+            if cache_key in self.memory_cache:
+                del self.memory_cache[cache_key]
+            
+            # 从数据库删除
+            cursor = self.conn.cursor()
+            cursor.execute('DELETE FROM data_cache WHERE cache_key = ?', (cache_key,))
+            self.conn.commit()
+            
+            logger.debug(f'缓存已删除: {cache_key}')
+            
+        except Exception as e:
+            logger.error(f'删除缓存失败: {e}')
     
     def clear_expired(self):
         """清理过期缓存"""
@@ -233,10 +231,10 @@ class DataCache:
             deleted_count = cursor.rowcount
             self.conn.commit()
             
-            logger.info(f"已清理 {deleted_count} 条过期缓存")
+            logger.info(f'已清理 {deleted_count} 条过期缓存')
             
         except Exception as e:
-            logger.error(f"清理过期缓存失败: {e}")
+            logger.error(f'清理过期缓存失败: {e}')
     
     def get_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
@@ -274,14 +272,14 @@ class DataCache:
             return stats
             
         except Exception as e:
-            logger.error(f"获取缓存统计失败: {e}")
+            logger.error(f'获取缓存统计失败: {e}')
             return {}
     
     def close(self):
         """关闭数据库连接"""
         if self.conn:
             self.conn.close()
-            logger.info("缓存数据库连接已关闭")
+            logger.info('缓存数据库连接已关闭')
 
 
 # 创建全局缓存实例

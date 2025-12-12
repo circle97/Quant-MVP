@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 A股数据管理器
 """
@@ -20,7 +20,7 @@ from ..utils.config import config_manager
 class AStockDataManager:
     """A股数据管理器：统一管理A股数据源和数据缓存"""
     
-    def __init__(self, data_source: str = None, use_test_data: bool = True):  # 默认使用测试数据
+    def __init__(self, data_source: str = None, use_test_data: bool = False):
         """初始化A股数据管理器
         
         Args:
@@ -31,7 +31,7 @@ class AStockDataManager:
             data_source = config_manager.get('data.source', 'akshare')
         
         self.data_source = data_source
-        self.use_test_data = use_test_data  # 直接使用传入的参数
+        self.use_test_data = use_test_data or config_manager.get('system.mode') == 'test'
         self.data_feeds: Dict[str, AStockDataFeed] = {}
         self.cache = data_cache
         
@@ -110,7 +110,7 @@ class AStockDataManager:
         """
         # 使用默认日期
         if start_date is None:
-            start_date = config_manager.get('data.start_date', '2023-01-01')
+            start_date = config_manager.get('data.start_date', '2020-01-01')
         if end_date is None:
             end_date = config_manager.get('data.end_date', datetime.now().strftime('%Y-%m-%d'))
         
@@ -187,24 +187,26 @@ class AStockDataManager:
     def _get_test_data(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         """获取测试数据"""
         try:
-            logger.info(f"生成测试数据: {symbol} ({start_date} 到 {end_date})")
+            # 计算天数
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            days = (end_dt - start_dt).days + 1
             
-            # 直接调用新的测试数据生成方法
-            df = local_test_data.generate_stock_data(symbol, start_date, end_date)
+            if days <= 0:
+                days = 100
             
-            if df.empty:
-                logger.warning(f"测试数据生成为空，使用默认生成方法")
-                # 后备方案：生成30天数据
-                df = local_test_data.generate_stock_data(symbol, start_date, 
-                                                        (datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=30)).strftime('%Y-%m-%d'))
+            # 生成测试数据
+            df = local_test_data.generate_stock_data(symbol, days)
             
-            logger.info(f"生成 {symbol} 测试数据成功: {len(df)} 条记录")
+            # 过滤日期范围
+            mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
+            df = df[mask]
+            
+            logger.info(f"生成 {symbol} 测试数据: {len(df)} 条记录")
             return df
             
         except Exception as e:
             logger.error(f"生成测试数据失败: {e}")
-            import traceback
-            traceback.print_exc()
             # 返回空DataFrame
             return pd.DataFrame()
     
@@ -302,13 +304,12 @@ class AStockDataManager:
     def _get_test_realtime_quote(self, symbol: str) -> Dict[str, Any]:
         """获取测试实时行情"""
         try:
-            # 生成最近5天的数据来模拟实时行情
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d')
+            # 获取日线数据来模拟实时行情
+            df = self._get_test_data(symbol, 
+                                    (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d'),
+                                    datetime.now().strftime('%Y-%m-%d'))
             
-            df = local_test_data.generate_stock_data(symbol, start_date, end_date)
-            
-            if not df.empty and len(df) > 1:
+            if not df.empty:
                 latest = df.iloc[-1]
                 name = stock_utils.get_stock_name(symbol)
                 
@@ -316,40 +317,14 @@ class AStockDataManager:
                     'symbol': symbol,
                     'name': name,
                     'price': float(latest['close']),
-                    'change': float(latest['close'] - df.iloc[-2]['close']),
+                    'change': float(latest['close'] - df.iloc[-2]['close'] if len(df) > 1 else 0),
                     'pct_change': float(latest['pct_chg'] if 'pct_chg' in latest else 0),
                     'volume': float(latest['volume']),
                     'amount': float(latest['amount']),
                     'high': float(latest['high']),
                     'low': float(latest['low']),
                     'open': float(latest['open']),
-                    'pre_close': float(df.iloc[-2]['close']),
-                    'timestamp': datetime.now().isoformat()
-                }
-                return quote
-            else:
-                # 生成简单数据
-                name = stock_utils.get_stock_name(symbol)
-                base_prices = {
-                    '000001.SZ': 10.0,
-                    '600519.SH': 1500.0,
-                    '000858.SZ': 100.0,
-                    '300750.SZ': 200.0,
-                }
-                price = base_prices.get(symbol, 10.0)
-                
-                quote = {
-                    'symbol': symbol,
-                    'name': name,
-                    'price': price,
-                    'change': 0.1,
-                    'pct_change': 0.5,
-                    'volume': 1000000,
-                    'amount': price * 1000000,
-                    'high': price * 1.02,
-                    'low': price * 0.98,
-                    'open': price * 1.01,
-                    'pre_close': price * 0.99,
+                    'pre_close': float(df.iloc[-2]['close'] if len(df) > 1 else latest['close']),
                     'timestamp': datetime.now().isoformat()
                 }
                 return quote
@@ -450,11 +425,22 @@ class AStockDataManager:
         if self.use_test_data:
             # 使用测试数据
             if start_date is None:
-                start_date = config_manager.get('data.start_date', '2023-01-01')
+                start_date = config_manager.get('data.start_date', '2020-01-01')
             if end_date is None:
                 end_date = config_manager.get('data.end_date', datetime.now().strftime('%Y-%m-%d'))
             
-            df = local_test_data.generate_index_data(index_code, start_date, end_date)
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            days = (end_dt - start_dt).days + 1
+            
+            if days <= 0:
+                days = 100
+            
+            df = local_test_data.generate_index_data(index_code, days)
+            
+            # 过滤日期范围
+            mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
+            df = df[mask]
             
             logger.info(f"生成 {index_code} 测试数据: {len(df)} 条记录")
             return df
@@ -468,7 +454,7 @@ class AStockDataManager:
             normalized_index, _ = stock_utils.normalize_symbol(index_code)
             
             if start_date is None:
-                start_date = config_manager.get('data.start_date', '2023-01-01')
+                start_date = config_manager.get('data.start_date', '2020-01-01')
             if end_date is None:
                 end_date = config_manager.get('data.end_date', datetime.now().strftime('%Y-%m-%d'))
             

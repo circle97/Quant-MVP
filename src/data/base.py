@@ -1,41 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-数据源基类定义
+A股数据源基类定义
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Tuple
 import pandas as pd
 from datetime import datetime, timedelta
+from dataclasses import dataclass
 from loguru import logger
 
 
+@dataclass
 class BarData:
-    """K线数据类"""
+    """A股K线数据类"""
     
-    def __init__(
-        self,
-        symbol: str,
-        datetime: datetime,
-        open_price: float,
-        high_price: float,
-        low_price: float,
-        close_price: float,
-        volume: float,
-        turnover: Optional[float] = None
-    ):
-        self.symbol = symbol
-        self.datetime = datetime
-        self.open = open_price
-        self.high = high_price
-        self.low = low_price
-        self.close = close_price
-        self.volume = volume
-        self.turnover = turnover
-        
+    symbol: str           # 股票代码，如 '000001.SZ'
+    datetime: datetime    # 日期时间
+    open: float           # 开盘价
+    high: float           # 最高价
+    low: float            # 最低价
+    close: float          # 收盘价
+    volume: float         # 成交量（手）
+    amount: float         # 成交额（元）
+    turnover: Optional[float] = None  # 换手率
+    pre_close: Optional[float] = None  # 前收盘价
+    change: Optional[float] = None     # 涨跌额
+    pct_change: Optional[float] = None  # 涨跌幅
+    
     def __repr__(self):
         return (f"BarData(symbol={self.symbol}, datetime={self.datetime}, "
-                f"open={self.open}, high={self.high}, low={self.low}, "
-                f"close={self.close}, volume={self.volume})")
+                f"close={self.close}, volume={self.volume:,}, "
+                f"pct_change={self.pct_change:.2%})")
     
     def to_dict(self):
         """转换为字典"""
@@ -47,26 +42,16 @@ class BarData:
             'low': self.low,
             'close': self.close,
             'volume': self.volume,
-            'turnover': self.turnover
+            'amount': self.amount,
+            'turnover': self.turnover,
+            'pre_close': self.pre_close,
+            'change': self.change,
+            'pct_change': self.pct_change
         }
-    
-    @classmethod
-    def from_dict(cls, data: dict):
-        """从字典创建BarData"""
-        return cls(
-            symbol=data['symbol'],
-            datetime=data['datetime'],
-            open_price=data['open'],
-            high_price=data['high'],
-            low_price=data['low'],
-            close_price=data['close'],
-            volume=data['volume'],
-            turnover=data.get('turnover')
-        )
 
 
-class DataFeed(ABC):
-    """数据源基类（抽象类）"""
+class AStockDataFeed(ABC):
+    """A股数据源基类（抽象类）"""
     
     def __init__(self, name: str):
         self.name = name
@@ -83,80 +68,96 @@ class DataFeed(ABC):
         pass
     
     @abstractmethod
-    def get_historical_data(
+    def get_daily_data(
         self,
         symbol: str,
         start_date: str,
         end_date: str,
-        interval: str = "1d"
+        adjust: str = "qfq"
     ) -> pd.DataFrame:
-        """获取历史数据
+        """获取日线数据
         
         Args:
-            symbol: 股票代码
+            symbol: 股票代码，如 '000001.SZ'
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            interval: 时间间隔 (1d, 1h, 1m等)
+            adjust: 复权类型 qfq(前复权), hfq(后复权), None(不复权)
             
         Returns:
-            pandas DataFrame，包含OHLCV数据
+            pandas DataFrame，包含OHLCV等数据
         """
         pass
     
     @abstractmethod
-    def get_realtime_data(self, symbol: str) -> Dict:
-        """获取实时数据
+    def get_realtime_quote(self, symbol: str) -> Dict:
+        """获取实时行情
         
         Args:
             symbol: 股票代码
             
         Returns:
-            实时数据字典
+            实时行情字典
         """
         pass
     
-    def get_historical_bars(
+    @abstractmethod
+    def get_basic_info(self, symbol: str) -> Dict:
+        """获取股票基本信息
+        
+        Args:
+            symbol: 股票代码
+            
+        Returns:
+            股票信息字典
+        """
+        pass
+    
+    def get_daily_bars(
         self,
         symbol: str,
         start_date: str,
         end_date: str,
-        interval: str = "1d"
+        adjust: str = "qfq"
     ) -> List[BarData]:
-        """获取历史K线数据列表
+        """获取日K线数据列表
         
         Args:
             symbol: 股票代码
-            start_date: 开始日期 (YYYY-MM-DD)
-            end_date: 结束日期 (YYYY-MM-DD)
-            interval: 时间间隔
+            start_date: 开始日期
+            end_date: 结束日期
+            adjust: 复权类型
             
         Returns:
             BarData列表
         """
-        df = self.get_historical_data(symbol, start_date, end_date, interval)
+        df = self.get_daily_data(symbol, start_date, end_date, adjust)
         
         bars = []
         for idx, row in df.iterrows():
             bar = BarData(
                 symbol=symbol,
-                datetime=idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else idx,
-                open_price=row['Open'],
-                high_price=row['High'],
-                low_price=row['Low'],
-                close_price=row['Close'],
-                volume=row.get('Volume', 0),
-                turnover=row.get('Turnover', 0)
+                datetime=idx if isinstance(idx, datetime) else pd.to_datetime(idx),
+                open=row.get('open', 0),
+                high=row.get('high', 0),
+                low=row.get('low', 0),
+                close=row.get('close', 0),
+                volume=row.get('volume', 0),
+                amount=row.get('amount', 0),
+                turnover=row.get('turnover_rate', row.get('turnover', 0)),
+                pre_close=row.get('pre_close', row.get('close', 0)),
+                change=row.get('change', 0),
+                pct_change=row.get('pct_chg', 0)
             )
             bars.append(bar)
         
         return bars
     
-    def get_multiple_symbols_data(
+    def get_multiple_stocks_data(
         self,
         symbols: List[str],
         start_date: str,
         end_date: str,
-        interval: str = "1d"
+        adjust: str = "qfq"
     ) -> Dict[str, pd.DataFrame]:
         """获取多个股票的历史数据
         
@@ -164,7 +165,7 @@ class DataFeed(ABC):
             symbols: 股票代码列表
             start_date: 开始日期
             end_date: 结束日期
-            interval: 时间间隔
+            adjust: 复权类型
             
         Returns:
             字典，键为股票代码，值为DataFrame
@@ -172,7 +173,7 @@ class DataFeed(ABC):
         result = {}
         for symbol in symbols:
             try:
-                df = self.get_historical_data(symbol, start_date, end_date, interval)
+                df = self.get_daily_data(symbol, start_date, end_date, adjust)
                 result[symbol] = df
                 logger.info(f"获取 {symbol} 数据成功: {len(df)} 条记录")
             except Exception as e:
@@ -182,11 +183,6 @@ class DataFeed(ABC):
         return result
 
 
-class DataError(Exception):
-    """数据错误异常"""
-    pass
-
-
-class DataValidationError(DataError):
-    """数据验证错误"""
+class AStockDataError(Exception):
+    """A股数据错误异常"""
     pass

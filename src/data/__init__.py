@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-数据模块
+A股数据模块
 """
 from .base import (
-    DataFeed,
+    AStockDataFeed,
     BarData,
-    DataError,
-    DataValidationError
+    AStockDataError
 )
 
-from .yfinance_data import (
-    YahooFinanceData,
-    yfinance_data
+from .tushare_data import (
+    TushareData,
+    tushare_data
+)
+
+from .akshare_data import (
+    AKShareData,
+    akshare_data
 )
 
 from .cache import (
@@ -20,28 +24,38 @@ from .cache import (
 )
 
 from .data_manager import (
-    DataManager,
-    data_manager
+    AStockDataManager,
+    astock_data_manager
+)
+
+from .utils import (
+    StockUtils,
+    stock_utils
 )
 
 __all__ = [
     # 基类
-    'DataFeed',
+    'AStockDataFeed',
     'BarData',
-    'DataError',
-    'DataValidationError',
+    'AStockDataError',
     
     # 数据源
-    'YahooFinanceData',
-    'yfinance_data',
+    'TushareData',
+    'tushare_data',
+    'AKShareData',
+    'akshare_data',
     
     # 缓存
     'DataCache',
     'data_cache',
     
     # 管理器
-    'DataManager',
-    'data_manager'
+    'AStockDataManager',
+    'astock_data_manager',
+    
+    # 工具
+    'StockUtils',
+    'stock_utils'
 ]
 
 __version__ = '0.1.0'
