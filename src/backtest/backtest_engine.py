@@ -262,6 +262,10 @@ class BacktestEngine:
             import matplotlib.pyplot as plt
             import pandas as pd
             
+            # 设置中文支持
+            plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']  # 设置中文字体
+            plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+            
             if not self.results:
                 logger.warning("回测结果为空，无法绘制")
                 return

@@ -19,6 +19,9 @@ class EventType(Enum):
     TIMER = "timer"                    # 定时器事件
     STRATEGY_START = "strategy_start"  # 策略启动事件
     STRATEGY_STOP = "strategy_stop"    # 策略停止事件
+    RISK = "risk"                      # 风险事件
+    EXCEPTION = "exception"            # 异常事件
+    STRATEGY = "strategy"              # 策略事件
 
 
 @dataclass
@@ -193,6 +196,91 @@ class FillEvent(Event):
     
     def __repr__(self):
         return f"FillEvent({self.symbol} {self.data['direction']} {self.data['quantity']} @ {self.data['price']}, 佣金: {self.data['commission']:.2f})"
+
+
+class RiskEvent(Event):
+    """风险事件"""
+    
+    def __init__(self, event_type: str, symbol: Optional[str] = None,
+                 order_id: Optional[str] = None, violated_rules: Optional[List[str]] = None,
+                 risk_report: Optional[str] = None, strategy_name: Optional[str] = None,
+                 metric_name: Optional[str] = None, metric_value: Optional[float] = None,
+                 min_threshold: Optional[float] = None, max_threshold: Optional[float] = None,
+                 timestamp: datetime = None):
+        if timestamp is None:
+            timestamp = datetime.now()
+            
+        data = {
+            'event_type': event_type,
+            'symbol': symbol,
+            'order_id': order_id,
+            'violated_rules': violated_rules or [],
+            'risk_report': risk_report,
+            'strategy_name': strategy_name,
+            'metric_name': metric_name,
+            'metric_value': metric_value,
+            'min_threshold': min_threshold,
+            'max_threshold': max_threshold
+        }
+        
+        super().__init__(EventType.RISK, timestamp, data)
+    
+    def __repr__(self):
+        return f"RiskEvent(type={self.data['event_type']}, strategy={self.data['strategy_name']}, metric={self.data['metric_name']}, value={self.data['metric_value']})"
+
+
+class ExceptionEvent(Event):
+    """异常事件"""
+    
+    def __init__(self, exception: Exception, context: Optional[Dict[str, Any]] = None,
+                 timestamp: datetime = None):
+        if timestamp is None:
+            timestamp = datetime.now()
+            
+        data = {
+            'exception': exception,
+            'context': context or {}
+        }
+        
+        super().__init__(EventType.EXCEPTION, timestamp, data)
+    
+    @property
+    def exception(self) -> Exception:
+        return self.data['exception']
+    
+    @property
+    def context(self) -> Dict[str, Any]:
+        return self.data['context']
+    
+    def __repr__(self):
+        return f"ExceptionEvent(type={type(self.data['exception']).__name__}, context={self.data['context']})"
+
+
+class StrategyEvent(Event):
+    """策略事件"""
+    
+    def __init__(self, strategy_name: str, event_type: str,
+                 timestamp: datetime = None):
+        if timestamp is None:
+            timestamp = datetime.now()
+            
+        data = {
+            'strategy_name': strategy_name,
+            'event_type': event_type  # 'PAUSED', 'RESUMED', 'ERROR'
+        }
+        
+        super().__init__(EventType.STRATEGY, timestamp, data)
+    
+    @property
+    def strategy_name(self) -> str:
+        return self.data['strategy_name']
+    
+    @property
+    def event_type(self) -> str:
+        return self.data['event_type']
+    
+    def __repr__(self):
+        return f"StrategyEvent(strategy={self.data['strategy_name']}, type={self.data['event_type']})"
 
 
 class EventEngine:
