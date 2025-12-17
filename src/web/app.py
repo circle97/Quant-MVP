@@ -597,6 +597,131 @@ elif page == "策略表现":
         fig.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
         st.plotly_chart(fig, width='stretch')
 
+elif page == "风险监控":
+    st.title("风险监控")
+    
+    # 第一行：风险指标概览
+    st.subheader("风险指标概览")
+    
+    # 获取风险指标
+    risk_metrics = get_real_risk_metrics()
+    
+    # 组织风险指标为两列布局
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("波动率", f"{risk_metrics['volatility']:.2%}")
+        st.metric("夏普比率", f"{risk_metrics['sharpe_ratio']:.2f}")
+        st.metric("最大回撤", f"{risk_metrics['max_drawdown']:.2%}")
+    
+    with col2:
+        st.metric("VaR 95%", f"{risk_metrics['var_95']:.2%}")
+        st.metric("VaR 99%", f"{risk_metrics['var_99']:.2%}")
+        st.metric("卡玛比率", f"{risk_metrics['calmar_ratio']:.2f}")
+    
+    # 第二行：风险预警和限制
+    st.subheader("风险预警")
+    
+    # 模拟风险预警数据
+    risk_alerts = [
+        {"指标": "最大回撤", "当前值": "-8.20%", "阈值": "-10.00%", "状态": "正常"},
+        {"指标": "波动率", "当前值": "15.20%", "阈值": "20.00%", "状态": "正常"},
+        {"指标": "VaR 95%", "当前值": "-2.50%", "阈值": "-5.00%", "状态": "正常"},
+        {"指标": "单日亏损", "当前值": "-1.20%", "阈值": "-3.00%", "状态": "正常"}
+    ]
+    
+    alerts_df = pd.DataFrame(risk_alerts)
+    st.dataframe(alerts_df, width='stretch')
+    
+    # 第三行：风险暴露分析
+    st.subheader("风险暴露分析")
+    
+    # 生成模拟的风险暴露数据
+    exposure_data = [
+        {"资产类别": "股票", "占比": 0.75, "风险贡献": 0.80},
+        {"资产类别": "债券", "占比": 0.15, "风险贡献": 0.10},
+        {"资产类别": "现金", "占比": 0.10, "风险贡献": 0.05}
+    ]
+    
+    exposure_df = pd.DataFrame(exposure_data)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 风险暴露饼图
+        fig = px.pie(exposure_df, values='占比', names='资产类别', title='资产配置')
+        fig.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
+        st.plotly_chart(fig, width='stretch')
+    
+    with col2:
+        # 风险贡献条形图
+        fig = px.bar(exposure_df, x='资产类别', y='风险贡献', title='风险贡献')
+        fig.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
+        fig.update_yaxes(tickformat='.1%')
+        st.plotly_chart(fig, width='stretch')
+
+elif page == "交易记录":
+    st.title("交易记录")
+    
+    # 订单历史
+    st.subheader("订单历史")
+    orders = get_real_order_history()
+    orders_df = pd.DataFrame(orders)
+    st.dataframe(orders_df, width='stretch')
+    
+    # 成交记录
+    st.subheader("成交记录")
+    trades = get_real_trades()
+    trades_df = pd.DataFrame(trades)
+    st.dataframe(trades_df, width='stretch')
+
+elif page == "系统状态":
+    st.title("系统状态监控")
+    
+    # 系统信息
+    st.subheader("系统信息")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Python版本", sys.version.split()[0])
+        st.metric("Streamlit版本", st.__version__)
+    
+    with col2:
+        st.metric("CPU使用率", f"{np.random.randint(10, 50)}%")
+        st.metric("内存使用率", f"{np.random.randint(30, 70)}%")
+    
+    with col3:
+        st.metric("运行时长", "24h 30m")
+        st.metric("事件数量", "1,245")
+    
+    # 组件状态
+    st.subheader("组件状态")
+    
+    components = [
+        {"组件": "策略引擎", "状态": "运行中", "最后活跃": "刚刚"},
+        {"组件": "订单管理器", "状态": "运行中", "最后活跃": "1分钟前"},
+        {"组件": "风险管理器", "状态": "运行中", "最后活跃": "30秒前"},
+        {"组件": "数据服务", "状态": "运行中", "最后活跃": "5秒前"}
+    ]
+    
+    components_df = pd.DataFrame(components)
+    st.dataframe(components_df, width='stretch')
+    
+    # 日志信息
+    st.subheader("系统日志")
+    
+    # 生成模拟日志
+    logs = [
+        {"时间": "2025-12-16 19:43:50", "级别": "INFO", "内容": "初始化投资组合，初始资金: 100000.00"},
+        {"时间": "2025-12-16 19:43:50", "级别": "INFO", "内容": "初始化风险管理器"},
+        {"时间": "2025-12-16 19:43:59", "级别": "DEBUG", "内容": "注册事件处理器: fill -> handle_fill"},
+        {"时间": "2025-12-16 19:44:00", "级别": "INFO", "内容": "系统运行正常"}
+    ]
+    
+    logs_df = pd.DataFrame(logs)
+    st.dataframe(logs_df, width='stretch')
+
 # 手动刷新按钮
 if st.sidebar.button("刷新数据"):
     st.rerun()
