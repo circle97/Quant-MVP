@@ -10,66 +10,8 @@ import numpy as np
 from loguru import logger
 
 from .event import SignalEvent, OrderEvent, FillEvent, EventType, event_engine
-
-
-@dataclass
-class Position:
-    """持仓信息"""
-    symbol: str
-    quantity: float  # 持仓数量（正数表示多头，负数表示空头）
-    avg_price: float  # 平均成本价
-    current_price: float  # 当前价格
-    market_value: float  # 市值
-    unrealized_pnl: float  # 未实现盈亏
-    realized_pnl: float = 0.0  # 已实现盈亏
-    
-    def update_price(self, price: float):
-        """更新价格并重新计算盈亏"""
-        self.current_price = price
-        self.market_value = self.quantity * price
-        self.unrealized_pnl = self.quantity * (price - self.avg_price)
-    
-    def add_quantity(self, quantity: float, price: float):
-        """增加持仓（买入）"""
-        if self.quantity + quantity == 0:
-            # 平仓
-            realized = self.quantity * (price - self.avg_price)
-            self.realized_pnl += realized
-            self.quantity = 0
-            self.avg_price = 0
-            self.market_value = 0
-            self.unrealized_pnl = 0
-        else:
-            # 计算新的平均成本
-            total_cost = self.quantity * self.avg_price + quantity * price
-            self.quantity += quantity
-            self.avg_price = total_cost / self.quantity if self.quantity != 0 else 0
-            self.update_price(price)
-    
-    def reduce_quantity(self, quantity: float, price: float):
-        """减少持仓（卖出）"""
-        # 卖出数量不能超过持仓
-        quantity_to_sell = min(abs(quantity), abs(self.quantity))
-        if self.quantity > 0:  # 多单
-            quantity_to_sell = min(quantity_to_sell, self.quantity)
-            realized = quantity_to_sell * (price - self.avg_price)
-        else:  # 空单
-            quantity_to_sell = min(quantity_to_sell, abs(self.quantity))
-            realized = quantity_to_sell * (self.avg_price - price)
-        
-        self.realized_pnl += realized
-        self.quantity -= quantity_to_sell if self.quantity > 0 else -quantity_to_sell
-        
-        if self.quantity == 0:
-            self.avg_price = 0
-        
-        self.update_price(price)
-    
-    def __repr__(self):
-        side = "多" if self.quantity > 0 else "空" if self.quantity < 0 else "零"
-        return (f"Position({self.symbol} {side}x{abs(self.quantity):.0f} "
-                f"@{self.avg_price:.2f}, 市值:{self.market_value:.2f}, "
-                f"盈亏:{self.unrealized_pnl:.2f})")
+from .position import Position
+from .transaction_manager import TransactionManager
 
 
 class Portfolio:
@@ -97,6 +39,9 @@ class Portfolio:
         self.stamp_duty_rate = 0.001  # 印花税率 0.1%（仅卖出时收取）
         self.min_commission = 5.0  # 最低佣金 5元
         self.transfer_fee_rate = 0.00002  # 过户费 0.002%
+        
+        # 初始化交易管理器
+        self.transaction_manager = TransactionManager()
         
         # 注册事件处理器
         self._register_event_handlers()
@@ -433,6 +378,11 @@ class Portfolio:
         
         # 更新总资产
         self.update_total_value(price)
+        
+        # 保存投资组合和持仓到数据库
+        self.transaction_manager.save_portfolio(self)
+        for position in self.positions.values():
+            self.transaction_manager.save_position(position)
     
     def _handle_buy_fill(self, symbol: str, quantity: float, price: float, 
                         commission: float, timestamp: datetime):
@@ -469,6 +419,9 @@ class Portfolio:
             'cash_after': self.cash
         }
         self.trades.append(trade_record)
+        
+        # 保存交易记录到数据库
+        self.transaction_manager.save_trade(trade_record)
         
         logger.info(f"买入成交: {symbol} {quantity}股 @{price:.2f}, "
                    f"费用:{commission:.2f}, 剩余现金:{self.cash:.2f}")
@@ -507,6 +460,9 @@ class Portfolio:
             'cash_after': self.cash
         }
         self.trades.append(trade_record)
+        
+        # 保存交易记录到数据库
+        self.transaction_manager.save_trade(trade_record)
         
         logger.info(f"卖出成交: {symbol} {quantity}股 @{price:.2f}, "
                    f"费用:{commission:.2f}, 剩余现金:{self.cash:.2f}")

@@ -116,3 +116,36 @@ class Order:
     
     def __repr__(self):
         return f"Order({self.order_id}, {self.symbol}, {self.direction.value}, {self.order_type.value}, {self.quantity} @ {self.price}, status={self.status.value})"
+
+
+class Fill:
+    """成交数据结构"""
+    
+    def __init__(self, order: Order, fill_quantity: float, fill_price: float,
+                 commission: float = 0.0, fill_id: Optional[str] = None):
+        """
+        初始化成交记录
+        
+        Args:
+            order: 关联的订单
+            fill_quantity: 成交数量
+            fill_price: 成交价格
+            commission: 手续费
+            fill_id: 成交ID，若为None则自动生成
+        """
+        self.fill_id = fill_id or str(uuid4())
+        self.order_id = order.order_id
+        self.symbol = order.symbol
+        self.direction = order.direction
+        self.fill_quantity = fill_quantity
+        self.fill_price = fill_price
+        self.commission = commission
+        self.fill_time = datetime.now()
+        self.strategy_name = order.strategy_name
+        self.account_id = order.account_id
+        
+        # 计算成交金额
+        self.fill_amount = fill_quantity * fill_price
+    
+    def __repr__(self):
+        return f"Fill({self.fill_id}, Order={self.order_id}, {self.symbol}, {self.direction.value}, {self.fill_quantity} @ {self.fill_price}, Commission={self.commission})"

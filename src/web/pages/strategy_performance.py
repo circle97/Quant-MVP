@@ -107,7 +107,7 @@ def show_strategy_performance():
     # 计算最大回撤
     def calculate_max_drawdown(returns):
         cumulative = (1 + returns).cumprod()
-        peak = cumulative.cummax()
+        peak = np.maximum.accumulate(cumulative)
         drawdown = (cumulative - peak) / peak
         return drawdown.min()
     

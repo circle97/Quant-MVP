@@ -8,42 +8,13 @@ from uuid import uuid4
 from loguru import logger
 
 from src.core.event import Event, EventType, SignalEvent, OrderEvent, FillEvent, event_engine
-from src.core.order import Order, OrderStatus, OrderType, OrderDirection
+from src.core.order import Order, OrderStatus, OrderType, OrderDirection, Fill
 from src.data.data_manager import AStockDataManager
 from src.core.risk_manager import RiskManager
+from src.core.transaction_manager import TransactionManager
 
 
-class Fill:
-    """成交数据结构"""
-    
-    def __init__(self, order: Order, fill_quantity: float, fill_price: float,
-                 commission: float = 0.0, fill_id: Optional[str] = None):
-        """
-        初始化成交记录
-        
-        Args:
-            order: 关联的订单
-            fill_quantity: 成交数量
-            fill_price: 成交价格
-            commission: 手续费
-            fill_id: 成交ID，若为None则自动生成
-        """
-        self.fill_id = fill_id or str(uuid4())
-        self.order_id = order.order_id
-        self.symbol = order.symbol
-        self.direction = order.direction
-        self.fill_quantity = fill_quantity
-        self.fill_price = fill_price
-        self.commission = commission
-        self.fill_time = datetime.now()
-        self.strategy_name = order.strategy_name
-        self.account_id = order.account_id
-        
-        # 计算成交金额
-        self.fill_amount = fill_quantity * fill_price
-    
-    def __repr__(self):
-        return f"Fill({self.fill_id}, Order={self.order_id}, {self.symbol}, {self.direction.value}, {self.fill_quantity} @ {self.fill_price}, Commission={self.commission})"
+
 
 
 class SlippageModel:
@@ -335,6 +306,9 @@ class ExecutionEngine:
         # 初始化风险管理器
         self.risk_manager = RiskManager(self.config.get("risk", {}))
         
+        # 初始化交易管理器
+        self.transaction_manager = TransactionManager()
+        
         # 投资组合引用
         self.portfolio = None
         
@@ -421,6 +395,8 @@ class ExecutionEngine:
             if not self.risk_manager.check_order_risk(order, self.portfolio):
                 order.status = OrderStatus.REJECTED
                 order.reject_time = datetime.now()
+                # 保存被拒绝的订单到数据库
+                self.transaction_manager.save_order(order)
                 logger.warning(f"订单 {order.order_id} 未通过风险检查，被拒绝")
                 return None
         
@@ -433,12 +409,17 @@ class ExecutionEngine:
             order.status = OrderStatus.SUBMITTED
             order.submit_time = datetime.now()
             
+            # 保存订单到数据库
+            self.transaction_manager.save_order(order)
+            
             logger.debug(f"订单提交成功: {order}")
             return order.order_id
         except Exception as e:
             logger.error(f"提交订单失败: {e}")
             order.status = OrderStatus.REJECTED
             order.reject_time = datetime.now()
+            # 保存被拒绝的订单到数据库
+            self.transaction_manager.save_order(order)
             return None
     
     def cancel_order(self, order_id: str) -> bool:
@@ -451,6 +432,10 @@ class ExecutionEngine:
             self.executor.cancel_order(order_id)
             order.status = OrderStatus.CANCELLED
             order.cancel_time = datetime.now()
+            
+            # 保存更新后的订单到数据库
+            self.transaction_manager.save_order(order)
+            
             logger.debug(f"订单取消成功: {order_id}")
             return True
         except Exception as e:
@@ -506,6 +491,10 @@ class ExecutionEngine:
         fill = Fill(order, fill_quantity, fill_price, commission)
         
         logger.debug(f"订单成交: {fill}")
+        
+        # 保存订单和成交记录到数据库
+        self.transaction_manager.save_order(order)
+        self.transaction_manager.save_fill(fill)
         
         # 触发成交事件
         fill_event = FillEvent(

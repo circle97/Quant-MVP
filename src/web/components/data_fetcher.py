@@ -2,49 +2,59 @@
 """
 数据获取组件
 """
-import numpy as np
-from src.core.portfolio import Portfolio
-from src.core.risk_manager import RiskManager
+from src.web.components.api_client import APIClient
 
-# 初始化全局变量
-portfolio = Portfolio(initial_capital=100000.0)
-risk_manager = RiskManager()
+# 初始化API客户端
+api_client = APIClient()
 
 def get_real_portfolio_data():
-    """从投资组合对象获取真实数据"""
-    summary = portfolio.get_portfolio_summary()
+    """从API获取投资组合数据"""
+    portfolio_data = api_client.get_portfolio_summary()
+    
+    if not portfolio_data:
+        # 返回默认数据，防止页面崩溃
+        return {
+            "total_value": 100000.0,
+            "cash": 100000.0,
+            "position_value": 0.0,
+            "daily_return": 0.0,
+            "total_return": 0.0
+        }
     
     data = {
-        "total_value": summary['当前总资产'],
-        "cash": summary['可用现金'],
-        "position_value": summary['持仓市值'],
-        "daily_return": 0.0,  # 暂未实现每日收益计算
-        "total_return": summary['总收益率'] / 100  # 转换为小数
+        "total_value": portfolio_data.get("total_value", 100000.0),
+        "cash": portfolio_data.get("cash", 100000.0),
+        "position_value": portfolio_data.get("total_value", 100000.0) - portfolio_data.get("cash", 100000.0),
+        "daily_return": portfolio_data.get("daily_return", 0.0),
+        "total_return": portfolio_data.get("total_return", 0.0) / 100  # 转换为小数
     }
     return data
 
 def get_real_positions():
-    """从投资组合对象获取真实持仓数据"""
-    positions = []
-    for position in portfolio.get_all_positions():
+    """从API获取持仓数据"""
+    positions = api_client.get_positions()
+    
+    # 转换持仓数据格式
+    formatted_positions = []
+    for pos in positions:
         # 计算盈亏比例
-        pnl_ratio = (position.current_price - position.avg_price) / position.avg_price if position.avg_price != 0 else 0
+        pnl_ratio = (pos.get("current_price", 0) - pos.get("avg_price", 0)) / pos.get("avg_price", 1) if pos.get("avg_price", 0) != 0 else 0
         
         pos_dict = {
-            "symbol": position.symbol,
-            "name": position.symbol,  # 简化处理，实际应从行情获取
-            "quantity": position.quantity,
-            "avg_price": position.avg_price,
-            "current_price": position.current_price,
-            "market_value": position.market_value,
-            "pnl": position.unrealized_pnl,
+            "symbol": pos.get("symbol", ""),
+            "name": pos.get("symbol", ""),  # 简化处理，实际应从行情获取
+            "quantity": pos.get("quantity", 0),
+            "avg_price": pos.get("avg_price", 0),
+            "current_price": pos.get("current_price", 0),
+            "market_value": pos.get("market_value", 0),
+            "pnl": pos.get("unrealized_pnl", 0),
             "pnl_ratio": pnl_ratio
         }
-        positions.append(pos_dict)
+        formatted_positions.append(pos_dict)
     
     # 如果没有持仓，返回模拟数据
-    if not positions:
-        positions = [
+    if not formatted_positions:
+        formatted_positions = [
             {
                 "symbol": "AAPL",
                 "name": "苹果",
@@ -87,66 +97,100 @@ def get_real_positions():
             }
         ]
     
-    return positions
+    return formatted_positions
 
 def get_real_order_history():
-    """获取订单历史（目前返回模拟数据）"""
-    # TODO: 从订单管理器获取真实订单历史
-    orders = [
-        {
-            "order_id": "ORDER_20251216103000",
-            "symbol": "AAPL",
-            "order_type": "MARKET",
-            "direction": "BUY",
-            "quantity": 100,
-            "price": 175.50,
-            "status": "FILLED",
-            "create_time": "2025-12-16 10:30:00",
-            "fill_time": "2025-12-16 10:30:01"
-        },
-        {
-            "order_id": "ORDER_20251216111500",
-            "symbol": "MSFT",
-            "order_type": "LIMIT",
-            "direction": "BUY",
-            "quantity": 50,
-            "price": 378.00,
-            "status": "FILLED",
-            "create_time": "2025-12-16 11:15:00",
-            "fill_time": "2025-12-16 11:15:05"
+    """从API获取订单历史"""
+    orders = api_client.get_orders()
+    
+    # 转换订单数据格式
+    formatted_orders = []
+    for order in orders:
+        order_dict = {
+            "order_id": order.get("order_id", ""),
+            "symbol": order.get("symbol", ""),
+            "order_type": order.get("order_type", ""),
+            "direction": order.get("direction", ""),
+            "quantity": order.get("quantity", 0),
+            "price": order.get("price", 0),
+            "status": order.get("status", ""),
+            "create_time": order.get("create_time", ""),
+            "fill_time": order.get("fill_time", "")
         }
-    ]
-    return orders
+        formatted_orders.append(order_dict)
+    
+    # 如果没有订单，返回模拟数据
+    if not formatted_orders:
+        formatted_orders = [
+            {
+                "order_id": "ORDER_20251216103000",
+                "symbol": "AAPL",
+                "order_type": "MARKET",
+                "direction": "BUY",
+                "quantity": 100,
+                "price": 175.50,
+                "status": "FILLED",
+                "create_time": "2025-12-16 10:30:00",
+                "fill_time": "2025-12-16 10:30:01"
+            },
+            {
+                "order_id": "ORDER_20251216111500",
+                "symbol": "MSFT",
+                "order_type": "LIMIT",
+                "direction": "BUY",
+                "quantity": 50,
+                "price": 378.00,
+                "status": "FILLED",
+                "create_time": "2025-12-16 11:15:00",
+                "fill_time": "2025-12-16 11:15:05"
+            }
+        ]
+    
+    return formatted_orders
 
 def get_real_risk_metrics():
-    """从风险管理器获取真实风险指标"""
-    # 计算投资组合的风险指标
-    performance_metrics = portfolio.get_performance_metrics()
+    """从API获取风险指标"""
+    performance_data = api_client.get_performance_metrics()
+    
+    if not performance_data:
+        # 返回默认风险指标
+        return {
+            "volatility": 0.15,
+            "sharpe_ratio": 1.8,
+            "max_drawdown": -0.08,
+            "var_95": -0.025,
+            "var_99": -0.045,
+            "calmar_ratio": 2.2
+        }
     
     metrics = {
-        "volatility": performance_metrics.get("年化波动率", 0.15) / 100,  # 转换为小数
-        "sharpe_ratio": performance_metrics.get("夏普比率", 1.8),
-        "max_drawdown": performance_metrics.get("最大回撤", -8.0) / 100,  # 转换为小数
+        "volatility": performance_data.get("annual_volatility", 15.0) / 100,  # 转换为小数
+        "sharpe_ratio": performance_data.get("sharpe_ratio", 1.8),
+        "max_drawdown": performance_data.get("max_drawdown", -8.0) / 100,  # 转换为小数
         "var_95": -0.025,  # 暂未实现VaR计算
         "var_99": -0.045,  # 暂未实现VaR计算
-        "calmar_ratio": performance_metrics.get("年化收益率", 12.5) / abs(performance_metrics.get("最大回撤", 8.0)) if performance_metrics.get("最大回撤", 0) != 0 else 2.2
+        "calmar_ratio": performance_data.get("annual_return", 12.5) / abs(performance_data.get("max_drawdown", 8.0)) if abs(performance_data.get("max_drawdown", 0)) != 0 else 2.2
     }
     return metrics
 
 def get_real_trades():
-    """从投资组合获取真实交易记录"""
-    # 获取交易记录
+    """从API获取交易记录（目前使用订单历史代替，后续需要添加交易记录API）"""
+    # 目前使用订单历史作为交易记录，后续需要添加专门的交易记录API
+    orders = api_client.get_orders()
+    
+    # 转换订单为交易记录格式
     trades = []
-    for trade in portfolio.trades:
-        trade_dict = {
-            "time": trade['timestamp'].strftime("%Y-%m-%d %H:%M:%S"),
-            "symbol": trade['symbol'],
-            "action": trade['action'],
-            "quantity": trade['quantity'],
-            "price": trade['price'],
-            "amount": trade['trade_value']
-        }
-        trades.append(trade_dict)
+    for order in orders:
+        if order.get("status") == "FILLED":
+            trade_dict = {
+                "time": order.get("fill_time", order.get("create_time", "")),
+                "symbol": order.get("symbol", ""),
+                "action": order.get("direction", ""),
+                "quantity": order.get("filled_quantity", order.get("quantity", 0)),
+                "price": order.get("avg_fill_price", order.get("price", 0)),
+                "amount": order.get("avg_fill_price", order.get("price", 0)) * order.get("filled_quantity", order.get("quantity", 0))
+            }
+            trades.append(trade_dict)
     
     # 如果没有交易记录，返回模拟数据
     if not trades:

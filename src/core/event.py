@@ -332,6 +332,11 @@ class EventEngine:
         """停止事件引擎"""
         self._running = False
         logger.info("事件引擎已停止")
+    
+    @property
+    def running(self):
+        """获取事件引擎运行状态"""
+        return self._running
 
 
 # 全局事件引擎实例
